@@ -30,7 +30,7 @@ class cache
         void insert(const K &key, const V &value);
         const V* find(const K &key);
         void evict();
-        void evict(const K &key, V *value = nullptr);
+        bool evict(const K &key, V *value = nullptr);
 };
 
 template<typename K, typename V>
@@ -81,10 +81,12 @@ void cache<K, V>::evict()
 }
 
 template<typename K, typename V>
-void cache<K, V>::evict(const K &key, V *value)
+bool cache<K, V>::evict(const K &key, V *value)
 {
     auto it = storage.lower_bound(key);
-    if (it != storage.end() && it->first == key) {
+    if (it == storage.end() || it->first != key)
+        return false;
+    else {
         if (value != nullptr)
             *value = std::move(it->second.value);
 
@@ -94,5 +96,7 @@ void cache<K, V>::evict(const K &key, V *value)
 
         storage.erase(iters.back());
         iters.pop_back();
+
+        return true;
     }
 }

@@ -2,6 +2,8 @@
 #include <vector>
 #include <random>
 
+#pragma once
+
 template<typename K, typename V>
 class cache
 {
@@ -30,7 +32,7 @@ class cache
         void insert(const K &key, const V &value);
         const V* find(const K &key);
         void evict();
-        bool evict(const K &key, V *value = nullptr);
+        size_t evict(const K &key, V *value = nullptr);
 };
 
 template<typename K, typename V>
@@ -72,31 +74,32 @@ void cache<K, V>::evict()
             if (iters[i]->second.time > iters[j]->second.time)
                 i = j;
         } while (false);
-        std::swap(iters[i], iters.back());
+
+        auto it = iters[i];
+        iters[i] = iters.back();
         iters[i]->second.index = i;
 
-        storage.erase(iters.back());
+        storage.erase(it);
         iters.pop_back();
     }
 }
 
 template<typename K, typename V>
-bool cache<K, V>::evict(const K &key, V *value)
+size_t cache<K, V>::evict(const K &key, V *value)
 {
     auto it = storage.lower_bound(key);
     if (it == storage.end() || it->first != key)
-        return false;
+        return 0;
     else {
         if (value != nullptr)
             *value = std::move(it->second.value);
 
         size_t i = it->second.index;
-        std::swap(iters[i], iters.back());
+        iters[i] = iters.back();
         iters[i]->second.index = i;
 
-        storage.erase(iters.back());
+        storage.erase(it);
         iters.pop_back();
-
-        return true;
+        return 1;
     }
 }

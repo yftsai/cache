@@ -1,4 +1,5 @@
 #include <unordered_map>
+#include <vector>
 #include <random>
 
 #pragma once
@@ -10,6 +11,7 @@ class unordered_cache
         struct value_entry
         {
             uint64_t time;
+            size_t index;
             V value;
         };
 
@@ -17,12 +19,17 @@ class unordered_cache
         std::default_random_engine engine;
         uint64_t clock;
         std::unordered_map<K, value_entry> storage;
+        std::vector<K> keys;
+
+        void evict(typename std::unordered_map<K, value_entry>::iterator it);
 
     public:
         unordered_cache(size_t size):
             max_capacity(size),
             clock(0)
-        {}
+        {
+            keys.reserve(size);
+        }
 
         void insert(const K &key, const V &value);
         const V* find(const K &key);
@@ -39,7 +46,8 @@ void unordered_cache<K, V>::insert(const K &key, const V &value)
     else {
         if (storage.size() >= max_capacity)
             evict();
-        storage.emplace(key, value_entry{ clock++, value});
+        storage.emplace(key, value_entry{ clock++, keys.size(), value});
+        keys.push_back(key);
     }
 }
 
@@ -56,23 +64,27 @@ const V* unordered_cache<K, V>::find(const K &key)
 }
 
 template<typename K, typename V>
+void unordered_cache<K, V>::evict(typename std::unordered_map<K, value_entry>::iterator it)
+{
+    const size_t index = it->second.index;
+    storage.erase(it);
+    keys[index] = std::move(keys.back());
+    keys.pop_back();
+    storage.find(keys[index])->second.index = index;
+}
+
+template<typename K, typename V>
 void unordered_cache<K, V>::evict()
 {
-    if (storage.size() > 0) {
-        std::uniform_int_distribution<size_t> distribution(0, storage.bucket_count() - 1u);
-        size_t i = distribution(engine);
-        while (storage.begin(i) == storage.end(i))
-            (++i) %= storage.bucket_count();
+    if (keys.size() > 0) {
+        std::uniform_int_distribution<size_t> distribution(0, keys.size() - 1u);
+        auto p = storage.find(keys[distribution(engine)]);
+        auto q = storage.find(keys[distribution(engine)]);
 
-        do {
-            size_t j = distribution(engine);
-            while (storage.begin(j) == storage.end(j))
-                (++j) %= storage.bucket_count();
-            if (storage.begin(i)->second.time > storage.begin(j)->second.time)
-                i = j;
-        } while (false);
-
-        storage.erase(storage.begin(i)->first);
+        if (p->second.time <= q->second.time)
+            evict(p);
+        else
+            evict(q);
     }
 }
 
@@ -86,7 +98,7 @@ size_t unordered_cache<K, V>::evict(const K &key, V *value)
         if (value != nullptr)
             *value = std::move(it->second.value);
 
-        storage.erase(it);
+        evict(it);
         return 1;
     }
 }

@@ -21,6 +21,8 @@ class cache
         std::map<K, value_entry> storage;
         std::vector<typename std::map<K, value_entry>::iterator> iters;
 
+        void evict(typename std::map<K, value_entry>::iterator it);
+
     public:
         cache(size_t size):
             max_capacity(size),
@@ -39,10 +41,8 @@ template<typename K, typename V>
 void cache<K, V>::insert(const K &key, const V &value)
 {
     auto it = storage.lower_bound(key);
-    if (it != storage.end() && it->first == key) {
+    if (it != storage.end() && it->first == key)
         it->second.time = (clock++);
-        it->second.value = value;
-    }
     else {
         if (storage.size() >= max_capacity)
             evict();
@@ -64,23 +64,26 @@ const V* cache<K, V>::find(const K &key)
 }
 
 template<typename K, typename V>
+void cache<K, V>::evict(typename std::map<K, value_entry>::iterator it)
+{
+    const size_t index = it->second.index;
+    storage.erase(it);
+    iters[index] = std::move(iters.back());
+    iters.pop_back();
+    iters[index]->second.index = index;
+}
+
+template<typename K, typename V>
 void cache<K, V>::evict()
 {
     if (iters.size() > 0) {
         std::uniform_int_distribution<size_t> distribution(0, iters.size() - 1);
-        size_t i = distribution(engine);
-        do {
-            const size_t j = distribution(engine);
-            if (iters[i]->second.time > iters[j]->second.time)
-                i = j;
-        } while (false);
-
-        auto it = iters[i];
-        iters[i] = iters.back();
-        iters[i]->second.index = i;
-
-        storage.erase(it);
-        iters.pop_back();
+        auto p = iters[distribution(engine)];
+        auto q = iters[distribution(engine)];
+        if (p->second.time <= q->second.time)
+            evict(p);
+        else
+            evict(q);
     }
 }
 
@@ -94,12 +97,7 @@ size_t cache<K, V>::evict(const K &key, V *value)
         if (value != nullptr)
             *value = std::move(it->second.value);
 
-        size_t i = it->second.index;
-        iters[i] = iters.back();
-        iters[i]->second.index = i;
-
-        storage.erase(it);
-        iters.pop_back();
+        evict(it);
         return 1;
     }
 }
